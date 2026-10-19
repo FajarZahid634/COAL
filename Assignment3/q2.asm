@@ -387,3 +387,166 @@ sw_done:
     mov sp, bp
     pop bp
     ret 10
+
+; =====================================================
+; find_and_highlight(keywordOffset, attr) -> AX = match count
+; keyword[bp+6] attr[bp+4]
+; locals: [bp-2]=count [bp-4]=len [bp-6]=row [bp-8]=pos [bp-10]=last pos
+;         line buffer = [bp-80] .. (61 bytes)
+; (COM file: CS=DS=ES=SS, so the stack buffer is reachable via ES:DI)
+; =====================================================
+find_and_highlight:
+    push bp
+    mov bp, sp
+    sub sp, 80
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push ds
+    push es
+
+    push cs
+    pop ds
+    push cs
+    pop es
+    cld
+
+    ; keyword length with REPNE SCASB
+    mov di, [bp+6]
+    xor al, al
+    mov cx, 0xFFFF
+    repne scasb
+    mov ax, 0xFFFE
+    sub ax, cx             ; AX = length
+    mov [bp-4], ax
+    mov word [bp-2], 0
+    mov bx, WIDTH
+    sub bx, ax
+    mov [bp-10], bx        ; last valid start position
+    mov word [bp-6], TOP
+
+fh_row:
+    mov ax, [bp-6]
+    cmp ax, BOT
+    jbe fh_body
+    jmp fh_done
+fh_body:
+    ; copy the row's characters (skip attributes) into the line buffer
+    push word [bp-6]
+    PUSHI LEFT
+    call rc2off
+    mov si, ax
+    lea di, [bp-80]
+    mov cx, WIDTH
+    push ds
+    mov ax, 0xb800
+    mov ds, ax
+fh_ex:
+    movsb                  ; char -> buffer
+    inc si                 ; skip attribute byte
+    loop fh_ex
+    pop ds
+
+    mov word [bp-8], 0
+fh_pos:
+    mov ax, [bp-8]
+    cmp ax, [bp-10]
+    jbe fh_try
+    jmp fh_next
+fh_try:
+    mov si, [bp+6]         ; keyword
+    lea di, [bp-80]
+    add di, [bp-8]
+    mov cx, [bp-4]
+    repe cmpsb
+    jne fh_nomatch
+
+    ; ---- match: recolor attribute bytes only
+    inc word [bp-2]
+    push word [bp-6]
+    mov ax, LEFT
+    add ax, [bp-8]
+    push ax
+    call rc2off
+    mov di, ax
+    inc di                 ; first attribute byte
+    mov cx, [bp-4]
+    mov al, [bp+4]
+    push es
+    mov bx, 0xb800
+    mov es, bx
+fh_hl:
+    stosb
+    inc di                 ; skip the character byte
+    loop fh_hl
+    pop es
+    mov ax, [bp-4]
+    add [bp-8], ax         ; skip past the match
+    jmp fh_pos
+fh_nomatch:
+    inc word [bp-8]
+    jmp fh_pos
+fh_next:
+    inc word [bp-6]
+    jmp fh_row
+fh_done:
+    mov ax, [bp-2]
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    mov sp, bp
+    pop bp
+    ret 4
+
+; =====================================================
+; printNum(videoOffset, number, attr) -> AX = end offset
+; offset[bp+8] number[bp+6] attr[bp+4]
+; =====================================================
+printNum:
+    push bp
+    mov bp, sp
+    sub sp, 2              ; [bp-2] = digit count
+    push bx
+    push cx
+    push dx
+    push di
+    push es
+
+    mov ax, 0xb800
+    mov es, ax
+    mov di, [bp+8]
+    mov ax, [bp+6]
+    mov bx, 10
+    mov word [bp-2], 0
+pn_div:
+    xor dx, dx
+    div bx
+    add dl, '0'
+    push dx                ; digits go on the stack
+    inc word [bp-2]
+    cmp ax, 0
+    jne pn_div
+    mov cx, [bp-2]
+    mov ah, [bp+4]
+    cld
+pn_out:
+    pop dx
+    mov al, dl
+    stosw
+    loop pn_out
+    mov ax, di
+
+    pop es
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    mov sp, bp
+    pop bp
+    ret 6
