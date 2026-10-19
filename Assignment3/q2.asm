@@ -321,3 +321,69 @@ st_done:
     pop bp
     ret 12
 
+; =====================================================
+; scroll_window_up(top, left, bottom, right, N)
+; top[bp+12] left[bp+10] bottom[bp+8] right[bp+6] N[bp+4]
+; =====================================================
+scroll_window_up:
+    push bp
+    mov bp, sp
+    sub sp, 4              ; [bp-2]=width in cells, [bp-4]=current row
+    push ax
+    push cx
+    push si
+    push di
+    push ds
+    push es
+
+    mov ax, 0xb800
+    mov ds, ax
+    mov es, ax
+    cld
+
+    mov ax, [bp+6]
+    sub ax, [bp+10]
+    inc ax
+    mov [bp-2], ax
+    mov ax, [bp+12]
+    mov [bp-4], ax
+sw_copy:
+    mov ax, [bp-4]
+    add ax, [bp+4]         ; source row = r + N
+    cmp ax, [bp+8]
+    ja sw_blank
+    push ax
+    push word [bp+10]
+    call rc2off
+    mov si, ax             ; source offset
+    push word [bp-4]
+    push word [bp+10]
+    call rc2off
+    mov di, ax             ; dest offset
+    mov cx, [bp-2]
+    rep movsw
+    inc word [bp-4]
+    jmp sw_copy
+sw_blank:
+    mov ax, [bp-4]         ; first vacated row
+    cmp ax, [bp+8]
+    ja sw_done
+    push ax
+    push word [bp+10]
+    call rc2off
+    mov di, ax
+    mov ax, 0x0720
+    mov cx, [bp-2]
+    rep stosw
+    inc word [bp-4]
+    jmp sw_blank
+sw_done:
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop cx
+    pop ax
+    mov sp, bp
+    pop bp
+    ret 10
