@@ -234,3 +234,90 @@ dw_bottom:
     mov sp, bp
     pop bp
     ret 10
+
+; =====================================================
+; print_string(videoOffset, strOffset, attr) -> AX = end offset
+; offset[bp+8] str[bp+6] attr[bp+4]
+; =====================================================
+print_string:
+    push bp
+    mov bp, sp
+    push es
+    push si
+    push di
+    mov ax, 0xb800
+    mov es, ax
+    mov di, [bp+8]
+    mov si, [bp+6]
+    mov ah, [bp+4]
+    cld
+ps_loop:
+    lodsb
+    cmp al, 0
+    je ps_done
+    stosw
+    jmp ps_loop
+ps_done:
+    mov ax, di
+    pop di
+    pop si
+    pop es
+    pop bp
+    ret 6
+
+; =====================================================
+; stream_text(row, col, width, table, count, attr)
+; row[bp+14] col[bp+12] width[bp+10] table[bp+8] count[bp+6] attr[bp+4]
+; =====================================================
+stream_text:
+    push bp
+    mov bp, sp
+    sub sp, 4              ; [bp-2]=current row, [bp-4]=line index
+    push ax
+    push bx
+    push cx
+    push si
+    push di
+    push es
+
+    mov ax, 0xb800
+    mov es, ax
+    cld
+    mov ax, [bp+14]
+    mov [bp-2], ax
+    mov word [bp-4], 0
+st_line:
+    mov ax, [bp-4]
+    cmp ax, [bp+6]
+    jae st_done
+    mov bx, [bp-4]
+    shl bx, 1
+    add bx, [bp+8]
+    mov si, [bx]           ; SI -> line text
+    push word [bp-2]
+    push word [bp+12]
+    call rc2off
+    mov di, ax
+    mov cx, [bp+10]        ; max chars (margins)
+    mov ah, [bp+4]
+st_char:
+    lodsb
+    cmp al, 0
+    je st_next
+    stosw
+    loop st_char
+st_next:
+    inc word [bp-2]
+    inc word [bp-4]
+    jmp st_line
+st_done:
+    pop es
+    pop di
+    pop si
+    pop cx
+    pop bx
+    pop ax
+    mov sp, bp
+    pop bp
+    ret 12
+
